@@ -1,0 +1,6 @@
+from typing import Protocol, Sequence
+
+
+class Model(Protocol):
+    def objective(self, x: Sequence[float]) -> float: ...
+    def gradient(self, x: Sequence[float]) -> list[float] | None: ...

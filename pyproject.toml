@@ -1,0 +1,24 @@
+[project]
+name = "semantiva-optimize"
+version = "0.1.0"
+description = "Optimization extension for Semantiva: Local Convex strategy and generic optimizer processor."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = ["numpy>=2.2.1"]
+
+[project.optional-dependencies]
+scipy = ["scipy>=1.13"]
+
+[project.entry-points."semantiva.extensions"]
+optimize = "semantiva_optimize.extension"
+
+[tool.setuptools]
+packages = ["semantiva_optimize"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"

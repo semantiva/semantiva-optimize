@@ -1,0 +1,1 @@
+# semantiva-optimize adapters package
