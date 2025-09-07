@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Constraint definitions for optimization problems.
+
+This module defines constraint types and the Constraints class that holds
+inequality and equality constraint functions for optimization strategies.
+"""
+
 from typing import Callable, Sequence
 
 # User functions: g(x) <= 0 (ineq), h(x) = 0 (eq)
@@ -20,6 +27,19 @@ Eq = Callable[[Sequence[float]], float]
 
 
 class Constraints:
+    """
+    Container for optimization constraints.
+
+    Holds lists of inequality (g(x) <= 0) and equality (h(x) = 0) constraint functions.
+    """
+
     def __init__(self, ineq: list[Ineq] | None = None, eq: list[Eq] | None = None):
+        """
+        Initialize constraint container.
+
+        Args:
+            ineq: List of inequality constraint functions g(x) <= 0
+            eq: List of equality constraint functions h(x) = 0
+        """
         self.ineq = ineq or []
         self.eq = eq or []

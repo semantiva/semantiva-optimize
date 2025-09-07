@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Semantiva Optimize - A first-class optimizer fully integrated into Semantiva.
+
+This package provides an OptimizerContextProcessor that can tune simulation parameters,
+fit models, calibrate instruments, or run controller-in-the-loop experiments with
+epistemic transparency by design.
+"""
+
+
 from semantiva.registry import SemantivaExtension
 from semantiva.registry.class_registry import ClassRegistry
 
@@ -21,8 +30,10 @@ from . import processors
 
 
 class SemantivaOptimize(SemantivaExtension):
+    """Extension class for registering Semantiva Optimize modules."""
 
     def register(self) -> None:
+        """Register all optimization-related modules with the Semantiva class registry."""
         ClassRegistry.register_modules(
             [
                 "semantiva_optimize.processors",

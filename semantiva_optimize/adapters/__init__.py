@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Adapter interfaces for optimization integration.
+
+This module provides adapters for integrating optimization with different
+types of models and controllers in the Semantiva ecosystem.
+"""
+
 from .controller_adapter import ControllerAdapter, NullController
 from .model_adapter import ModelAdapter
 

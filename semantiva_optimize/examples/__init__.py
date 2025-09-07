@@ -12,4 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Example models for semantiva-optimize."""
+"""
+Example models and demonstrations for Semantiva Optimize.
+
+This module provides sample optimization models and test cases for
+demonstrating optimization strategies and integration patterns.
+"""

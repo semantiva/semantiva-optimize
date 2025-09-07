@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Context processors for optimization workflows.
+
+This module provides the main OptimizerContextProcessor that integrates
+optimization strategies into Semantiva's context processing pipeline.
+"""
+
 from .optimizer_processor import OptimizerContextProcessor
 
 __all__ = ["OptimizerContextProcessor"]

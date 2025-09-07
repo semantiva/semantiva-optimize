@@ -12,9 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Model adapter interface for optimization.
+
+This module defines the ModelAdapter protocol that optimization strategies
+use to interact with objective functions and their gradients.
+"""
+
 from typing import Protocol, Sequence
 
 
 class ModelAdapter(Protocol):
-    def objective(self, x: Sequence[float]) -> float: ...
-    def gradient(self, x: Sequence[float]) -> list[float] | None: ...
+    """Protocol for model adapters that provide objective functions for optimization."""
+
+    def objective(self, x: Sequence[float]) -> float:
+        """Compute objective function value at point x."""
+
+    def gradient(self, x: Sequence[float]) -> list[float] | None:
+        """Compute gradient at point x, or None if not available."""

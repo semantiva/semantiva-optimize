@@ -12,11 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Factory functions for creating optimization strategy instances.
+
+This module provides the main entry point for creating optimization strategies
+by name, with aliases for common patterns.
+"""
+
 from semantiva_optimize.strategies.local_convex import LocalConvex
 from semantiva_optimize.strategies.nelder_mead import NelderMead
 
 
-def make_strategy(name: str, **params):
+def make_strategy(name: str, **params):  # pylint: disable=unused-argument
+    """
+    Create an optimization strategy instance by name.
+
+    Args:
+        name: Strategy name (supports aliases like 'local', 'nelder-mead')
+        **params: Currently unused, reserved for future strategy configuration
+
+    Returns:
+        Strategy instance (LocalConvex or NelderMead)
+
+    Raises:
+        ValueError: If strategy name is not recognized
+    """
     name = (name or "").lower()
     if name in {"local", "lbfgsb", "slsqp", "local_convex"}:
         return LocalConvex()

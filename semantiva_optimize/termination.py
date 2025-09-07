@@ -12,11 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Termination criteria for optimization algorithms.
+
+This module defines the Termination dataclass that specifies when
+optimization should stop based on various convergence criteria.
+"""
+
 from dataclasses import dataclass
 
 
 @dataclass
 class Termination:
+    """
+    Optimization termination criteria.
+
+    Defines when optimization should stop based on maximum evaluations
+    and various tolerance thresholds for convergence detection.
+    """
+
     max_evals: int = 200
     ftol_abs: float = 1e-9
     ftol_rel: float = 1e-9

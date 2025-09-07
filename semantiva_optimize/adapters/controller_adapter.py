@@ -12,20 +12,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Controller adapter interfaces for optimization.
+
+This module defines the ControllerAdapter protocol and provides a default
+NullController implementation for optimization scenarios that don't require
+controller interaction.
+"""
+
 from typing import Protocol, Sequence, Any
 
 
 class ControllerAdapter(Protocol):
-    def reset(self, seed: int | None = None) -> None: ...
-    def apply(self, x: Sequence[float]) -> Any: ...
-    def safe(self, x: Sequence[float]) -> bool: ...
+    """Protocol for controller adapters in optimization scenarios."""
+
+    def reset(self, seed: int | None = None) -> None:
+        """Reset controller state with optional random seed."""
+
+    def apply(self, x: Sequence[float]) -> Any:
+        """Apply optimization parameters to controller."""
+
+    def safe(self, x: Sequence[float]) -> bool:
+        """Check if parameters are safe for controller."""
 
 
 class NullController:
-    def reset(self, seed: int | None = None) -> None: ...
+    """Default no-op controller implementation."""
 
-    def apply(self, x):
+    def reset(self, seed: int | None = None) -> None:
+        """Reset state (no-op implementation)."""
+
+    def apply(self, x):  # pylint: disable=unused-argument
+        """Apply parameters (returns zero)."""
         return 0.0
 
-    def safe(self, x):
+    def safe(self, x):  # pylint: disable=unused-argument
+        """Check safety (always returns True)."""
         return True

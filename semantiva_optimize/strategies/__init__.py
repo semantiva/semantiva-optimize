@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Optimization strategy implementations.
+
+This module provides concrete optimization strategies including local convex
+optimization (L-BFGS-B, SLSQP) and gradient-free methods (Nelder-Mead).
+"""
+
 from .local_convex import LocalConvex
 from .nelder_mead import NelderMead
 
