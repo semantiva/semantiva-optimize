@@ -21,3 +21,33 @@ addopts = "-q"
 [build-system]
 requires = ["setuptools>=70", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "black >=24.10.0",
+    "mypy >=1.14.1",
+    "pylint >=3.3.3",
+    "pytest >=8.3.4",
+    "ruff >=0.1.13",
+    "coverage",
+    "types-PyYAML>=6.0.12",
+]
+
+[tool.pdm.version]
+source = "file"
+path = ".github/workflows/version.txt"
+
+[tool.pylint]
+# Configuration for pylint (static analysis)
+max-line-length = 120  
+fail-under = 7.5
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["semantiva_optimize"]
+
+[tool.pdm.scripts]
+cicheck = "bash ./ci_pipeline.sh"  # Define the shell script as a PDM script
+

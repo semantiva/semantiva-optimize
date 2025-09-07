@@ -1,0 +1,113 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'  # Trigger the build job only on version tags (e.g., v1.0.0, v2.0.0)
+  pull_request:
+    branches:
+      - main
+
+env:
+  project_name: semantiva_optimize
+  python_version: '3.10.12'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.python_version }}
+
+      - name: Install pip and PDM
+        run: |
+          python -m pip install --upgrade pip
+          pip install pdm
+
+      - name: Ensure lock includes dev group and install dev deps
+        run: |
+          # Create or update lockfile locally in CI and install dev tools (not committed)
+          pdm lock -G :all
+          pdm install -G :all
+
+      - name: Run pylint
+        run: pdm run pylint semantiva_optimize --fail-under=7.5
+
+      - name: Run mypy
+        run: pdm run mypy .
+      - name: Check license headers
+        run: pdm run python scripts/check_license_headers.py
+
+      - name: Run black (check)
+        run: pdm run black --check .
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.python_version }}
+
+      - name: Install pip and PDM
+        run: |
+          python -m pip install --upgrade pip
+          pip install pdm
+
+      - name: Install dependencies (including dev)
+        run: |
+          pdm lock -G :all
+          pdm install -G :all
+
+      - name: Run pytest with coverage report
+        run: |
+          pdm run coverage run -m pytest --maxfail=1 -q -s
+        
+      - name: Display coverage report
+        run: |
+          pdm run coverage report
+
+  build:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.python_version }}
+
+      - name: Install pip and PDM
+        run: |
+          python -m pip install --upgrade pip
+          pip install pdm
+
+      - name: Regenerate lock and install deps
+        run: |
+          pdm lock -G :all
+          pdm install -G :all
+
+      - name: Build package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "__version__ = \"$VERSION\"" > .github/workflows/version.txt
+          pdm build
+
+      - name: Publish to PyPI
+        run: pdm publish --repository pypi
