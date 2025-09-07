@@ -13,37 +13,49 @@
 # limitations under the License.
 
 import pytest
+from semantiva import Pipeline, Payload
+from semantiva.context_processors.context_types import ContextType
+from semantiva.data_types import NoDataType
+from semantiva.registry.plugin_registry import load_extensions
 
 
 def test_compat_floatdatatype_if_available():
+    """Test compatibility with FloatDataType if available (optional dependency)."""
     try:
         from semantiva.examples.test_utils import FloatDataType
     except Exception:
-        return
+        pytest.skip("FloatDataType not available")
+
     try:
         import scipy  # noqa
     except Exception:
         pytest.skip("SciPy not installed")
 
-    from semantiva.registry import load_extensions
-    from semantiva.context_processors.context_observer import _ContextObserver
-    from semantiva.context_processors.context_types import ContextType
-    from semantiva_optimize.processors.optimizer_processor import OptimizerContextProcessor
-    from semantiva_optimize.factory import make_strategy
+    # Load extension
+    load_extensions(["semantiva_optimize"])
 
-    load_extensions("semantiva_optimize.extension")
+    # Extract float value from FloatDataType
+    x0_value = FloatDataType(0.0).data
 
-    class M:
-        def objective(self, x): return float((x[0]-1.0)**2)
-        def gradient(self, x):  return [2.0*(x[0]-1.0)]
+    # Create pipeline node configuration
+    nodes = [
+        {
+            "processor": "OptimizerContextProcessor",
+            "parameters": {
+                "strategy": "local",
+                "x0": [x0_value],
+                "bounds": [[-10, 10]],
+                "model_name": "parabola",
+                "model_params": {"x_star": 1.0},  # (x-1)^2
+                "termination": None,  # Uses default termination
+            },
+        }
+    ]
 
-    p = OptimizerContextProcessor()
-    ctx = ContextType()
-    obs = _ContextObserver()
+    # Execute pipeline
+    pipeline = Pipeline(nodes)
+    result = pipeline.process(Payload(data=NoDataType(), context=ContextType()))
 
-    x0 = FloatDataType(0.0).data
-    p.operate_context(context=ctx, context_observer=obs, strategy=make_strategy("local"),
-                      x0=[x0], bounds=[(-10,10)], model=M(),
-                      termination=None, controller=None, constraints=None, strategy_params={})
-    best = ctx.get_value("optimizer.best_candidate")
-    assert abs(best["x"][0]-1.0) < 1e-6
+    # Verify results
+    best = result.context.get_value("optimizer.best_candidate")
+    assert abs(best["x"][0] - 1.0) < 1e-6

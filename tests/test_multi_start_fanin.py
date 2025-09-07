@@ -14,48 +14,47 @@
 
 import math
 import pytest
-from semantiva.registry import load_extensions
-from semantiva.context_processors.context_observer import _ContextObserver
+from semantiva import Pipeline, Payload
 from semantiva.context_processors.context_types import ContextType
+from semantiva.data_types import NoDataType
+from semantiva.registry.plugin_registry import load_extensions
 
 
 def test_multi_start_fan_in():
+    """Test multi-start optimization converges to global minimum from multiple starting points."""
     try:
         import scipy  # noqa: F401
     except Exception:
         pytest.skip("SciPy not installed")
 
-    from semantiva_optimize.processors.optimizer_processor import OptimizerContextProcessor
-    from semantiva_optimize.factory import make_strategy
-    from semantiva_optimize.termination import Termination
+    # Load extension
+    load_extensions(["semantiva_optimize"])
 
-    load_extensions("semantiva_optimize.extension")
+    # Create pipeline node configuration
+    nodes = [
+        {
+            "processor": "OptimizerContextProcessor",
+            "parameters": {
+                "strategy": "local",
+                "x0": [0.0],  # Will be overridden by multi_start
+                "multi_start": [[-5.0], [0.0], [10.0]],
+                "bounds": [[-10.0, 10.0]],
+                "termination": {"max_evals": 200, "ftol_abs": 1e-12, "xtol_abs": 1e-12},
+                "model_name": "parabola",
+                "model_params": {"x_star": 2.0},  # (x-2)^2
+            },
+        }
+    ]
 
-    class M:
-        def objective(self, x):
-            return float((x[0] - 2.0) ** 2)
+    # Execute pipeline
+    pipeline = Pipeline(nodes)
+    result = pipeline.process(Payload(data=NoDataType(), context=ContextType()))
 
-        def gradient(self, x):
-            return [2.0 * (x[0] - 2.0)]
-
-    starts = [[-5.0], [0.0], [10.0]]
-
-    p, ctx, obs = OptimizerContextProcessor(), ContextType(), _ContextObserver()
-    p.operate_context(
-        context=ctx,
-        context_observer=obs,
-        strategy=make_strategy("local"),
-        x0=[0.0],
-        multi_start=starts,
-        bounds=[(-10.0, 10.0)],
-        termination=Termination(max_evals=200, ftol_abs=1e-12, xtol_abs=1e-12),
-        model=M(),
-        controller=None,
-        constraints=None,
-        strategy_params={},
-    )
-    runs = ctx.get_value("optimizer.runs")
+    # Verify multi-start behavior
+    runs = result.context.get_value("optimizer.runs")
     assert len(runs) == 3
-    v = ctx.get_value("optimizer.best_candidate")["x"][0]
-    assert math.isclose(v, 2.0, rel_tol=1e-4, abs_tol=1e-4)
 
+    # Verify convergence to global minimum
+    best = result.context.get_value("optimizer.best_candidate")
+    v = best["x"][0]
+    assert math.isclose(v, 2.0, rel_tol=1e-4, abs_tol=1e-4)

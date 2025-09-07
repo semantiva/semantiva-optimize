@@ -1,0 +1,15 @@
+extensions: ["semantiva_optimize"]
+
+pipeline:
+  nodes:
+    - processor: OptimizerContextProcessor
+      parameters:
+        strategy: "local"
+        x0: [0.5]
+        bounds: [[-10, 10]]
+        model_name: "poly_residual"
+        model_params:
+          coeffs: [1.0, 0.0, -2.0]   # p(x)=x^2 - 2 → roots ±sqrt(2)
+        termination: { max_evals: 200, ftol_abs: 1e-12, xtol_abs: 1e-12 }
+        log_every: 1
+

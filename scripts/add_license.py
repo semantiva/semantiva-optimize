@@ -53,7 +53,7 @@ HEADER_PATTERN = re.compile(
     re.MULTILINE,
 )
 
-INCLUDE_DIRS: Iterable[str] = ["semantiva-optimize", "tests", "scripts", "docs"]
+INCLUDE_DIRS: Iterable[str] = ["semantiva_optimize", "tests", "scripts", "docs"]
 EXTENSIONS = [".py"]
 
 

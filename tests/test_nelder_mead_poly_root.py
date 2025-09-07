@@ -14,45 +14,42 @@
 
 import math
 import pytest
-from semantiva.registry import load_extensions
-from semantiva.context_processors.context_observer import _ContextObserver
+from semantiva import Pipeline, Payload
 from semantiva.context_processors.context_types import ContextType
+from semantiva.data_types import NoDataType
+from semantiva.registry.plugin_registry import load_extensions
 
 
 def test_nelder_mead_poly_root():
+    """Test Nelder-Mead gradient-free optimization finds polynomial roots."""
     try:
         import scipy  # noqa: F401
     except Exception:
         pytest.skip("SciPy not installed")
 
-    from semantiva_optimize.processors.optimizer_processor import OptimizerContextProcessor
-    from semantiva_optimize.factory import make_strategy
-    from semantiva_optimize.termination import Termination
+    # Load extension
+    load_extensions(["semantiva_optimize"])
 
-    load_extensions("semantiva_optimize.extension")
+    # Create pipeline node configuration
+    nodes = [
+        {
+            "processor": "OptimizerContextProcessor",
+            "parameters": {
+                "strategy": "nelder-mead",
+                "x0": [0.1],
+                "bounds": None,  # Nelder-Mead doesn't require bounds
+                "termination": {"max_evals": 500, "ftol_abs": 1e-12, "xtol_abs": 1e-12},
+                "model_name": "poly_residual",
+                "model_params": {"coeffs": [1.0, 0.0, -2.0]},  # x^2 - 2
+            },
+        }
+    ]
 
-    class PolyModel:
-        def objective(self, x):
-            p = x[0] * x[0] - 2.0
-            return float(p * p)
+    # Execute pipeline
+    pipeline = Pipeline(nodes)
+    result = pipeline.process(Payload(data=NoDataType(), context=ContextType()))
 
-        def gradient(self, x):
-            return None
-
-    p = OptimizerContextProcessor()
-    ctx, obs = ContextType(), _ContextObserver()
-    p.operate_context(
-        context=ctx,
-        context_observer=obs,
-        strategy=make_strategy("nelder-mead"),
-        x0=[0.1],
-        bounds=None,
-        termination=Termination(max_evals=500, ftol_abs=1e-12, xtol_abs=1e-12),
-        model=PolyModel(),
-        controller=None,
-        constraints=None,
-        strategy_params={},
-    )
-    v = ctx.get_value("optimizer.best_candidate")["x"][0]
+    # Verify results
+    best = result.context.get_value("optimizer.best_candidate")
+    v = best["x"][0]
     assert abs(v - math.sqrt(2.0)) < 1e-4 or abs(v + math.sqrt(2.0)) < 1e-4
-

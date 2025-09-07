@@ -12,9 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Protocol, Sequence
-
-
-class ModelAdapter(Protocol):
-    def objective(self, x: Sequence[float]) -> float: ...
-    def gradient(self, x: Sequence[float]) -> list[float] | None: ...
+"""Example models for semantiva-optimize."""
