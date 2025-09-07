@@ -41,10 +41,18 @@ class SemantivaOptimize(SemantivaExtension):
                 "semantiva_optimize.adapters",
                 "semantiva_optimize.termination",
                 "semantiva_optimize.constraints",
+                "semantiva_optimize.descriptors",
                 "semantiva_optimize.factory",
                 "semantiva_optimize.examples.models",
             ]
         )
+
+        # Register config processor and parameter resolver
+        from .config_preprocessor import optimize_config_preprocessor
+        from .param_resolvers import optimize_param_resolver
+
+        ClassRegistry.register_config_processor(optimize_config_preprocessor)
+        ClassRegistry.register_param_resolver(optimize_param_resolver)
 
 
 __all__ = [

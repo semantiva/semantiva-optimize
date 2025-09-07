@@ -22,8 +22,10 @@ inequality and equality constraint functions for optimization strategies.
 from typing import Callable, Sequence
 
 # User functions: g(x) <= 0 (ineq), h(x) = 0 (eq)
-Ineq = Callable[[Sequence[float]], float]
-Eq = Callable[[Sequence[float]], float]
+# Historically some implementations returned a list[float] for compatibility
+# with vector constraints. Accept either a float or a list[float].
+Ineq = Callable[[Sequence[float]], float | list[float]]
+Eq = Callable[[Sequence[float]], float | list[float]]
 
 
 class Constraints:

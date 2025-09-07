@@ -1,0 +1,12 @@
+extensions: ["semantiva_optimize"]
+
+pipeline:
+  nodes:
+    - processor: OptimizerContextProcessor
+      parameters:
+        strategy: "nelder-mead"
+        x0: [0.1]
+        termination: { max_evals: 500, ftol_abs: 1e-12, xtol_abs: 1e-12 }
+        model:
+          class: "semantiva_optimize.examples.models.PolyResidualModel"
+          kwargs: {}
