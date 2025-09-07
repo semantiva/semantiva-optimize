@@ -47,65 +47,70 @@ class OptimizerContextProcessor(ContextProcessor):
         constraints: Constraints | None = None,
         strategy_params: dict | None = None,
         seed: int | None = None,
+        multi_start: list[Sequence[float]] | None = None,
     ) -> None:
         termination = termination or Termination()
         strategy_params = strategy_params or {}
         self._notify_context_update(self.STRATEGY_KEY, strategy.__class__.__name__)
-        self._notify_context_update(self.PARAMS_KEY, {
-            "bounds": bounds, "termination": termination.__dict__, "strategy": strategy_params
-        })
+        self._notify_context_update(
+            self.PARAMS_KEY,
+            {"bounds": bounds, "termination": termination.__dict__, "strategy": strategy_params},
+        )
         self._notify_context_update(self.HISTORY_KEY, [])
 
-        state = strategy.initialize(
-            x0=x0, bounds=bounds, termination=termination,
-            model=model, controller=controller, constraints=constraints,
-            params=strategy_params, seed=seed
-        )
-        neval = 0
-        best = None
+        starts = multi_start or [x0]
+        runs, global_best = [], None
 
-        while not strategy.should_stop(state):
-            x = strategy.ask(state)
-            if controller:
-                feasible = controller.safe(x)
-                obs = controller.apply(x)
-                value = model.objective(x) if model else float(obs)
-            else:
-                feasible = True
+        for start_x in starts:
+            state = strategy.initialize(
+                x0=start_x,
+                bounds=bounds,
+                termination=termination,
+                model=model,
+                controller=controller,
+                constraints=constraints,
+                params=strategy_params,
+                seed=seed,
+            )
+            neval = 0
+            while not strategy.should_stop(state):
+                x = strategy.ask(state)
+                feasible = controller.safe(x) if controller else True
                 value = model.objective(x) if model else float("nan")
+                viol = 0.0
+                if constraints:
+                    for g in constraints.ineq:
+                        viol = max(viol, max(0.0, g(x)))
+                    for h in constraints.eq:
+                        viol = max(viol, abs(h(x)))
+                    feasible = feasible and (viol <= 1e-12)
+                step = {
+                    "iter": state.get("iter", 0),
+                    "x": [float(v) for v in x],
+                    "value": float(value),
+                    "feasible": bool(feasible),
+                    "violations": float(viol),
+                    "step_info": {"neval": neval},
+                    "rng": state.get("rng"),
+                    "meu": {
+                        "claim": {"value": float(value), "feasible": bool(feasible)},
+                        "justification": {"rule": strategy.__class__.__name__},
+                        "context": {"bounds": bounds},
+                        "trace": {"iter": state.get("iter", 0)},
+                    },
+                }
+                hist = state.setdefault("__history__", [])
+                hist.append(step)
+                self._notify_context_update(self.HISTORY_KEY, hist)
+                state = strategy.tell(state, x, value, feasible, viol)
+                neval += 1
 
-            viol = 0.0
-            if constraints:
-                for g in constraints.ineq: viol = max(viol, max(0.0, g(x)))
-                for h in constraints.eq:   viol = max(viol, abs(h(x)))
-                feasible = feasible and (viol <= 1e-12)
+            runs.append(state["best"])
+            if (global_best is None) or (state["best"]["value"] < global_best["value"]):
+                global_best = state["best"]
 
-            step = {
-                "iter": state.get("iter", 0),
-                "x": [float(v) for v in x],
-                "value": float(value),
-                "feasible": bool(feasible),
-                "violations": float(viol),
-                "step_info": {"neval": neval},
-                "rng": state.get("rng"),
-                "meu": {
-                    "claim": {"value": float(value), "feasible": bool(feasible)},
-                    "justification": {"rule": strategy.__class__.__name__},
-                    "context": {"bounds": bounds},
-                    "trace": {"iter": state.get("iter", 0)},
-                },
-            }
-            history = state.setdefault("__history__", [])
-            history.append(step)
-            self._notify_context_update(self.HISTORY_KEY, history)
-
-            state = strategy.tell(state, x, value, feasible, viol)
-            neval += 1
-            cand = state.get("best", {"x": x, "value": value, "feasible": feasible})
-            if (best is None) or (cand["value"] < best["value"]):
-                best = {"x": cand["x"], "value": float(cand["value"]), "feasible": bool(cand["feasible"]), "meta": {}}
-
-        self._notify_context_update(self.BEST_KEY, best)
+        self._notify_context_update("optimizer.runs", runs)
+        self._notify_context_update(self.BEST_KEY, global_best)
         self._notify_context_update(self.TERMINATION_KEY, strategy.termination_summary(state))
 
     # required abstract methods
