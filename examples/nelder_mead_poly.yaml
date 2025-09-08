@@ -9,4 +9,5 @@ pipeline:
         termination: { max_evals: 500, ftol_abs: 1e-12, xtol_abs: 1e-12 }
         model:
           class: "semantiva_optimize.examples.models.PolyResidualModel"
-          kwargs: {}
+          kwargs: 
+            coeffs: [1, 0, -4, 0]  # x^3 - 4x (roots at 0, ±2)

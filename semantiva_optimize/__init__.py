@@ -44,6 +44,7 @@ class SemantivaOptimize(SemantivaExtension):
                 "semantiva_optimize.descriptors",
                 "semantiva_optimize.factory",
                 "semantiva_optimize.examples.models",
+                "semantiva_optimize.progress",
             ]
         )
 

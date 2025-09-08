@@ -68,11 +68,16 @@ class OptimizerContextProcessor(ContextProcessor):
         strategy_params: dict | None = None,
         seed: int | None = None,
         multi_start: list[Sequence[float]] | None = None,
+        # Optional objective spec (YAML friendly): { class: "module.Class", kwargs: { ... } }
+        objective: dict | None = None,
         # NEW knobs:
         log_every: int | None = None,
         model_name: str | None = None,
         model_params: dict | None = None,
         decimals: int = 6,
+        progress=None,
+        progress_update_every: int = 1,
+        progress_throttle_s: float = 0.0,
     ) -> None:
         """
         Main optimization processing logic.
@@ -81,6 +86,24 @@ class OptimizerContextProcessor(ContextProcessor):
         with comprehensive logging and context updates.
         """
         # Resolve strategy and model from strings/parameters
+        # If an `objective` spec was provided (YAML-friendly), try to instantiate it
+        if model is None and objective:
+            try:
+                # objective expected as {'class': 'module.ClassName', 'kwargs': {...}}
+                cls_path = (
+                    objective.get("class") if isinstance(objective, dict) else None
+                )
+                kw = objective.get("kwargs", {}) if isinstance(objective, dict) else {}
+                if cls_path:
+                    import importlib
+
+                    module_name, class_name = cls_path.rsplit(".", 1)
+                    mod = importlib.import_module(module_name)
+                    cls = getattr(mod, class_name)
+                    model = cls(**(kw or {}))
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                raise ValueError(f"Failed to instantiate objective from spec: {exc}")
+
         strategy, model = self._resolve_strategy_and_model(
             strategy, strategy_params, model, model_name, model_params
         )
@@ -90,6 +113,78 @@ class OptimizerContextProcessor(ContextProcessor):
 
         # Set up context
         self._setup_optimization_context(strategy, bounds, termination, strategy_params)
+
+        # Normalise progress observers
+        if progress is None:
+            observers = []
+        elif isinstance(progress, (list, tuple)):
+            observers = list(progress)
+        else:
+            observers = [progress]
+
+        import time
+        from semantiva_optimize.progress.base import StartEvent, StepEvent, EndEvent
+
+        _last_emit = 0.0
+
+        def _broadcast_start(run_id, total_runs, meta):
+            e = StartEvent(total_runs=total_runs, run_id=run_id, meta=meta or {})
+            for ob in observers:
+                try:
+                    ob.on_start(e)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
+
+        def _broadcast_step(iter_idx, x, f, feasible, violation, run_id, is_best, meta):
+            nonlocal _last_emit
+            if iter_idx % int(progress_update_every or 1) != 0:
+                return
+            now = time.time()
+            if progress_throttle_s > 0 and (now - _last_emit) < progress_throttle_s:
+                return
+            _last_emit = now
+            e = StepEvent(
+                iter=iter_idx,
+                x=list(x),
+                f=float(f),
+                feasible=bool(feasible),
+                violation=float(violation),
+                run_id=run_id,
+                is_best=bool(is_best),
+                meta=meta or {},
+            )
+            for ob in observers:
+                try:
+                    ob.on_step(e)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
+            if is_best:
+                for ob in observers:
+                    try:
+                        ob.on_best(e)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        pass
+
+        def _broadcast_end(reason, best_x, best_f, run_id, meta):
+            e = EndEvent(
+                reason=str(reason),
+                best_x=list(best_x),
+                best_f=float(best_f),
+                run_id=run_id,
+                meta=meta or {},
+            )
+            for ob in observers:
+                try:
+                    ob.on_end(e)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
+
+        def _close_observers():
+            for ob in observers:
+                try:
+                    ob.close()
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
 
         # Run optimization
         starts = multi_start or [x0]
@@ -105,7 +200,12 @@ class OptimizerContextProcessor(ContextProcessor):
             seed,
             log_every,
             decimals,
+            _broadcast_start,
+            _broadcast_step,
+            _broadcast_end,
         )
+
+        _close_observers()
 
         # Update final context
         self._finalize_optimization_context(runs, global_best, final_term)
@@ -167,13 +267,21 @@ class OptimizerContextProcessor(ContextProcessor):
         seed,
         log_every,
         decimals,
+        broadcast_start,
+        broadcast_step,
+        broadcast_end,
     ):
         """Run optimization from multiple starting points."""
         runs, global_best = [], None
         log_every = max(0, int(log_every or 0))
         final_term = None
 
-        for start_x in starts:
+        strategy_name = strategy.__class__.__name__
+        total_runs = len(starts)
+        for rid, start_x in enumerate(starts):
+            broadcast_start(
+                rid if total_runs > 1 else None, total_runs, {"strategy": strategy_name}
+            )
             best, term = self._run_single_optimization(
                 start_x,
                 strategy,
@@ -186,6 +294,8 @@ class OptimizerContextProcessor(ContextProcessor):
                 seed,
                 log_every,
                 decimals,
+                rid if total_runs > 1 else None,
+                broadcast_step,
             )
             runs.append(best)
             if global_best is None:
@@ -193,6 +303,13 @@ class OptimizerContextProcessor(ContextProcessor):
             elif best and best["value"] < global_best["value"]:
                 global_best = best
             final_term = term  # Keep the last termination info
+            broadcast_end(
+                term.get("reason"),
+                best["x"],
+                best["value"],
+                rid if total_runs > 1 else None,
+                {"strategy": strategy_name},
+            )
 
         return runs, global_best, final_term
 
@@ -209,6 +326,8 @@ class OptimizerContextProcessor(ContextProcessor):
         seed,
         log_every,
         decimals,
+        run_id,
+        broadcast_step,
     ):
         """Run optimization from a single starting point."""
         if self.logger:
@@ -217,19 +336,36 @@ class OptimizerContextProcessor(ContextProcessor):
                 f"bounds={bounds} x0={_fmt_vec(start_x, decimals)}"
             )
 
-        state = strategy.initialize(
-            x0=start_x,
-            bounds=bounds,
-            termination=termination,
-            model=model,
-            controller=controller,
-            constraints=constraints,
-            params=strategy_params,
-            seed=seed,
-        )
+        # Try to pass progress_broadcaster to strategy if it supports it
+        init_kwargs = {
+            "x0": start_x,
+            "bounds": bounds,
+            "termination": termination,
+            "model": model,
+            "controller": controller,
+            "constraints": constraints,
+            "params": strategy_params,
+            "seed": seed,
+        }
+
+        # Check if strategy supports progress broadcasting
+        import inspect
+
+        if "progress_broadcaster" in inspect.signature(strategy.initialize).parameters:
+            init_kwargs["progress_broadcaster"] = broadcast_step
+
+        state = strategy.initialize(**init_kwargs)
 
         best = self._optimization_loop(
-            strategy, state, model, controller, constraints, log_every, decimals
+            strategy,
+            state,
+            model,
+            controller,
+            constraints,
+            log_every,
+            decimals,
+            run_id,
+            broadcast_step,
         )
 
         term = strategy.termination_summary(state)
@@ -242,7 +378,16 @@ class OptimizerContextProcessor(ContextProcessor):
         return best, term
 
     def _optimization_loop(
-        self, strategy, state, model, controller, constraints, log_every, decimals
+        self,
+        strategy,
+        state,
+        model,
+        controller,
+        constraints,
+        log_every,
+        decimals,
+        run_id,
+        broadcast_step,
     ):
         """Main optimization iteration loop."""
         neval = 0
@@ -262,9 +407,21 @@ class OptimizerContextProcessor(ContextProcessor):
             if self.logger and log_every and (neval % log_every == 0):
                 self._log_iteration(step, decimals)
 
+            prev_best_val = best["value"] if best else float("inf")
             state = strategy.tell(state, x, value, feasible, viol)
             neval += 1
             best = self._update_best_candidate(state, best, x, value, feasible)
+            is_best = best["value"] < prev_best_val
+            broadcast_step(
+                step["iter"],
+                x,
+                value,
+                feasible,
+                viol,
+                run_id,
+                is_best,
+                {"strategy": strategy.__class__.__name__},
+            )
 
         return best or {
             "x": state.get("x0", []),

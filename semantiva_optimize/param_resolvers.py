@@ -31,6 +31,11 @@ _STRATEGY_ALIASES = {
     "neldermead": "semantiva_optimize.strategies.nelder_mead.NelderMead",
 }
 
+_PROGRESS_ALIASES = {
+    "poly.plot": "semantiva_optimize.progress.poly.PolynomialPlotObserver",
+    "cost.curve": "semantiva_optimize.progress.cost.CostCurveObserver",
+}
+
 _KV_RE = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*([^,]+)\s*")
 
 
@@ -83,5 +88,16 @@ def optimize_param_resolver(value: Any) -> Any:
         class_path, kvs = match.group(1), match.group(2)
         kwargs = _parse_kv_list(kvs)
         return {"class": class_path, "kwargs": kwargs}
+
+    if body.startswith("progress:"):
+        sig = body.split(":", 1)[1].strip()
+        if "(" in sig and sig.endswith(")"):
+            alias = sig[: sig.index("(")].strip().lower()
+            kwargs = _parse_kv_list(sig[sig.index("(") + 1 : -1])
+        else:
+            alias = sig.strip().lower()
+            kwargs = {}
+        class_path = _PROGRESS_ALIASES.get(alias, alias)
+        return [{"class": class_path, "kwargs": kwargs}]
 
     return value

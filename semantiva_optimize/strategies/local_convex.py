@@ -32,6 +32,7 @@ class LocalConvex:
         self._constraints = None
         self._term = None
         self._params = None
+        self._progress_broadcaster = None
 
     def initialize(
         self,
@@ -44,6 +45,7 @@ class LocalConvex:
         constraints,
         params,
         seed=None,  # pylint: disable=unused-argument
+        progress_broadcaster=None,
     ):
         """
         Initialize optimization state.
@@ -66,6 +68,7 @@ class LocalConvex:
         self._constraints = constraints
         self._term = termination
         self._params = params or {}
+        self._progress_broadcaster = progress_broadcaster
         return {
             "iter": 0,
             "best": {"x": list(x0), "value": float("inf"), "feasible": True},
@@ -98,6 +101,38 @@ class LocalConvex:
         method, cons = self._setup_optimization_method()
         jac = self._setup_jacobian(x)
 
+        # Store intermediate results for progress reporting
+        intermediate_results = []
+        global_best_f = state["best"]["value"]
+
+        def callback(xk):
+            """Callback to capture intermediate optimization steps."""
+            f_val = float(self._model.objective(xk))
+            result = {
+                "x": [float(v) for v in xk],
+                "f": f_val,
+                "iter": len(intermediate_results),
+            }
+            intermediate_results.append(result)
+
+            # Broadcast progress immediately if broadcaster is available
+            if self._progress_broadcaster:
+                nonlocal global_best_f
+                is_best = f_val < global_best_f
+                if is_best:
+                    global_best_f = f_val
+                self._progress_broadcaster(
+                    result["iter"],
+                    result["x"],
+                    result["f"],
+                    True,  # feasible
+                    0.0,  # viol
+                    0,  # run_id
+                    is_best,
+                    {"strategy": self.__class__.__name__, "source": "live"},
+                )
+            return False  # Don't terminate early
+
         res = opt.minimize(
             fun=lambda z: float(self._model.objective(z)),
             x0=x,
@@ -105,8 +140,12 @@ class LocalConvex:
             bounds=self._bounds,
             constraints=cons,
             method=method,
+            callback=callback,
             options={"maxiter": self._term.max_evals, "ftol": self._term.ftol_abs},
         )
+
+        # Store intermediate results in state for progress reporting
+        state["intermediate_results"] = intermediate_results
         state["best"] = {
             "x": [float(v) for v in res.x],
             "value": float(res.fun),

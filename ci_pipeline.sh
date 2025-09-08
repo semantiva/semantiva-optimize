@@ -10,6 +10,7 @@ python --version
 # Step 1: Install dependencies (including development dependencies)
 echo "Installing dependencies..."
 pdm install --dev
+pdm add matplotlib
 
 # Step 2: Run linting (Pylint)
 echo "Running pylint..."

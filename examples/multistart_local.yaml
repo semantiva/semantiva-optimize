@@ -2,21 +2,15 @@ extensions: ["semantiva_optimize"]
 
 pipeline:
   nodes:
-    - processor: DataSlicerProcessor
-      parameters:
-        values:
-          starts:
-            - [-5.0]
-            - [0.0]
-            - [10.0]
-
     - processor: OptimizerContextProcessor
       parameters:
         strategy: "local"
         x0: [0.0]
-        multi_start: "{{ slice.values.starts }}"
+        multi_start: 
+          - [-5.0]
+          - [0.0]
+          - [10.0]
         bounds: [[-10.0, 10.0]]
         termination: { max_evals: 100, ftol_abs: 1e-10, xtol_abs: 1e-10 }
-        constraints:
-          ineq:
-            - { type: linear, a: [-1], b: 0 }
+        model_name: "parabola"
+        model_params: { x_star: 3.0 }

@@ -10,8 +10,4 @@ pipeline:
         model_name: "parabola"
         model_params: { x_star: 3.0 }
         termination: { max_evals: 100, ftol_abs: 1e-12, xtol_abs: 1e-12 }
-        constraints:
-          ineq:
-            - { type: linear, a: [-1], b: 0 }
         log_every: 1
-

@@ -104,5 +104,26 @@ def optimize_config_preprocessor(node: Dict[str, Any]) -> Dict[str, Any]:
             "kwargs": cons,
         }
 
+    prog = params.get("progress")
+    if isinstance(prog, str):
+        params["progress"] = [{"class": _resolve_progress_alias(prog), "kwargs": {}}]
+    elif isinstance(prog, dict) and "class" in prog:
+        params["progress"] = [prog]
+    elif isinstance(prog, list):
+        params["progress"] = [
+            {
+                "class": _resolve_progress_alias(p.get("class", "")),
+                "kwargs": p.get("kwargs", {}),
+            }
+            for p in prog
+        ]
+
     node["parameters"] = params
     return node
+
+
+def _resolve_progress_alias(alias: str) -> str:
+    return {
+        "poly.plot": "semantiva_optimize.progress.poly.PolynomialPlotObserver",
+        "cost.curve": "semantiva_optimize.progress.cost.CostCurveObserver",
+    }.get(alias, alias)

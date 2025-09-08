@@ -1,0 +1,31 @@
+extensions: ["semantiva_optimize"]
+
+pipeline:
+  nodes:
+    - processor: OptimizerContextProcessor
+      parameters:
+        # Use built-in example polynomial residual model instead of a missing
+        # 'objective' module. The processor supports `model_name` and
+        # `model_params` via `examples.models.make_model`.
+        model_name: "poly"
+        model_params:
+          coeffs: [0.0, 0.0, 1.0, 0.0]
+        strategy: "local"
+        x0: [0.0, 0.0, 1.0, 0.0]
+        termination: { max_evals: 120, ftol_abs: 1e-10 }
+
+        progress:
+          - class: "semantiva_optimize.progress.poly.PolynomialPlotObserver"
+            kwargs:
+              x_data: [0,1,2,3,4,5]
+              y_data: [0.1,1.2,4.1,8.9,15.7,24.9]
+              mode: "file"
+              out_dir: "./_progress"
+              file_prefix: "poly"
+          - class: "semantiva_optimize.progress.cost.CostCurveObserver"
+            kwargs:
+              mode: "file"
+              out_dir: "./_progress"
+              file_prefix: "cost"
+
+        progress_update_every: 2

@@ -17,3 +17,5 @@ constraints:
 
 All conversions happen through the regular Semantiva resolver stack; YAML stays
 pure data.
+
+Want live visuals? See [Progress Observers](progress-observers.md) for cost curves and real-time polynomial overlays.
