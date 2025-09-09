@@ -12,22 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Progress observers for optimization runs."""
+import sys
+from pathlib import Path
 
-from .base import ProgressObserver, StartEvent, StepEvent, EndEvent
-
-try:  # optional matplotlib dependency
-    from .cost import CostCurveObserver
-    from .poly import PolynomialPlotObserver
-except Exception:  # pragma: no cover - optional
-    CostCurveObserver = None  # type: ignore
-    PolynomialPlotObserver = None  # type: ignore
-
-__all__ = [
-    "ProgressObserver",
-    "StartEvent",
-    "StepEvent",
-    "EndEvent",
-    "CostCurveObserver",
-    "PolynomialPlotObserver",
-]
+sys.path.append(str(Path(__file__).resolve().parents[1]))

@@ -21,7 +21,7 @@ optimization, constraint handling, and epistemic transparency.
 """
 
 from __future__ import annotations
-from typing import Sequence
+from typing import Sequence, Optional, Dict, Any
 
 from semantiva.context_processors.context_processors import ContextProcessor
 
@@ -86,10 +86,8 @@ class OptimizerContextProcessor(ContextProcessor):
         with comprehensive logging and context updates.
         """
         # Resolve strategy and model from strings/parameters
-        # If an `objective` spec was provided (YAML-friendly), try to instantiate it
         if model is None and objective:
             try:
-                # objective expected as {'class': 'module.ClassName', 'kwargs': {...}}
                 cls_path = (
                     objective.get("class") if isinstance(objective, dict) else None
                 )
@@ -108,13 +106,45 @@ class OptimizerContextProcessor(ContextProcessor):
             strategy, strategy_params, model, model_name, model_params
         )
 
-        # Process termination criteria
         termination = self._process_termination(termination)
-
-        # Set up context
         self._setup_optimization_context(strategy, bounds, termination, strategy_params)
 
-        # Normalise progress observers
+        from semantiva_optimize.progress.base import StartEvent, StepEvent, EndEvent
+
+        history: list[dict] = []
+        self._notify_context_update(self.HISTORY_KEY, history)
+
+        def _append_history(record: dict):
+            history.append(record)
+            self._notify_context_update(self.HISTORY_KEY, history)
+
+        def _emit_progress(event_ctor, payload: dict, append_to_history: bool = False):
+            if append_to_history and event_ctor is StepEvent:
+                rec = dict(payload)
+                rec["value"] = rec.pop("f")
+                _append_history(rec)
+            e = event_ctor(**payload)
+            for ob in observers:
+                try:
+                    if event_ctor is StartEvent:
+                        ob.on_start(e)
+                    elif event_ctor is StepEvent:
+                        ob.on_step(e)
+                        if payload.get("is_best"):
+                            ob.on_best(e)
+                    else:
+                        ob.on_end(e)
+                except Exception:
+                    pass
+            if event_ctor is EndEvent:
+                for ob in observers:
+                    try:
+                        ob.close()
+                    except Exception:
+                        pass
+
+        progress_update_every = int(progress_update_every or 1)
+        progress_throttle_s = float(progress_throttle_s or 0.0)
         if progress is None:
             observers = []
         elif isinstance(progress, (list, tuple)):
@@ -123,92 +153,118 @@ class OptimizerContextProcessor(ContextProcessor):
             observers = [progress]
 
         import time
-        from semantiva_optimize.progress.base import StartEvent, StepEvent, EndEvent
 
-        _last_emit = 0.0
-
-        def _broadcast_start(run_id, total_runs, meta):
-            e = StartEvent(total_runs=total_runs, run_id=run_id, meta=meta or {})
-            for ob in observers:
-                try:
-                    ob.on_start(e)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    pass
-
-        def _broadcast_step(iter_idx, x, f, feasible, violation, run_id, is_best, meta):
-            nonlocal _last_emit
-            if iter_idx % int(progress_update_every or 1) != 0:
-                return
-            now = time.time()
-            if progress_throttle_s > 0 and (now - _last_emit) < progress_throttle_s:
-                return
-            _last_emit = now
-            e = StepEvent(
-                iter=iter_idx,
-                x=list(x),
-                f=float(f),
-                feasible=bool(feasible),
-                violation=float(violation),
-                run_id=run_id,
-                is_best=bool(is_best),
-                meta=meta or {},
+        def _run_one_start(run_id: Optional[int], start_x) -> Dict[str, Any]:
+            _emit_progress(
+                StartEvent,
+                {
+                    "total_runs": total_runs,
+                    "run_id": run_id,
+                    "meta": {"strategy": strategy_name},
+                },
             )
-            for ob in observers:
-                try:
-                    ob.on_step(e)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    pass
-            if is_best:
-                for ob in observers:
-                    try:
-                        ob.on_best(e)
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        pass
 
-        def _broadcast_end(reason, best_x, best_f, run_id, meta):
-            e = EndEvent(
-                reason=str(reason),
-                best_x=list(best_x),
-                best_f=float(best_f),
-                run_id=run_id,
-                meta=meta or {},
+            best: Dict[str, Any] = {"x": list(start_x), "f": float("inf")}
+            last_emit = {"t": 0.0}
+
+            def _feas_and_viol(x):
+                if constraints is None:
+                    return True, 0.0
+                max_viol = 0.0
+                feas = True
+                for g in constraints.ineq or []:
+                    v = max(0.0, float(g(x)))
+                    max_viol = max(max_viol, v)
+                    feas = feas and (v == 0.0)
+                for h in constraints.eq or []:
+                    v = abs(float(h(x)))
+                    max_viol = max(max_viol, v)
+                    feas = feas and (v == 0.0)
+                return feas, max_viol
+
+            def _is_best(f: float) -> bool:
+                return f < best["f"]
+
+            def _on_iter(iter_idx: int, xk, fk: float) -> None:
+                if iter_idx % progress_update_every != 0:
+                    return
+                now = time.time()
+                if (
+                    progress_throttle_s > 0
+                    and (now - last_emit["t"]) < progress_throttle_s
+                ):
+                    return
+                last_emit["t"] = now
+                feasible, viol = _feas_and_viol(xk)
+                is_new_best = _is_best(fk)
+                if is_new_best:
+                    best["x"], best["f"] = list(xk), float(fk)
+                payload = {
+                    "iter": iter_idx,
+                    "x": list(xk),
+                    "f": float(fk),
+                    "feasible": bool(feasible),
+                    "violation": float(viol),
+                    "run_id": run_id,
+                    "is_best": bool(is_new_best),
+                    "meta": {"strategy": strategy_name, "source": "scipy"},
+                }
+                _emit_progress(StepEvent, payload, append_to_history=True)
+
+            if hasattr(strategy, "set_progress_broadcaster"):
+                strategy.set_progress_broadcaster(_on_iter)
+
+            res = strategy.tell(
+                x0=start_x,
+                model=model,
+                bounds=bounds,
+                constraints=constraints,
+                termination=termination,
             )
-            for ob in observers:
-                try:
-                    ob.on_end(e)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    pass
 
-        def _close_observers():
-            for ob in observers:
-                try:
-                    ob.close()
-                except Exception:  # pylint: disable=broad-exception-caught
-                    pass
+            feasible, viol = _feas_and_viol(res.x)
+            if res.fun < best["f"]:
+                best["x"], best["f"] = list(res.x), float(res.fun)
 
-        # Run optimization
+            _emit_progress(
+                EndEvent,
+                {
+                    "reason": getattr(res, "message", "completed"),
+                    "best_x": best["x"],
+                    "best_f": best["f"],
+                    "run_id": run_id,
+                    "meta": {"strategy": strategy_name},
+                },
+            )
+            return best
+
         starts = multi_start or [x0]
-        runs, global_best, final_term = self._run_multi_start_optimization(
-            starts,
-            strategy,
-            bounds,
-            termination,
-            model,
-            controller,
-            constraints,
-            strategy_params,
-            seed,
-            log_every,
-            decimals,
-            _broadcast_start,
-            _broadcast_step,
-            _broadcast_end,
+        strategy_name = strategy.__class__.__name__
+        total_runs = len(starts)
+        runs: list[dict] = []
+        for rid, start in enumerate(starts):
+            runs.append(_run_one_start(rid if total_runs > 1 else None, start))
+
+        global_best: Optional[Dict[str, Any]] = None
+        for r in runs:
+            if global_best is None:
+                global_best = r
+            else:
+                # now safe to index global_best
+                if r["f"] < global_best["f"]:
+                    global_best = r
+
+        self._notify_context_update("optimizer.runs", runs)
+        # mypy cannot prove runs is non-empty; assert to narrow type for indexing
+        assert global_best is not None
+        self._notify_context_update(
+            self.BEST_KEY,
+            {"x": global_best["x"], "value": global_best["f"], "feasible": True},
         )
-
-        _close_observers()
-
-        # Update final context
-        self._finalize_optimization_context(runs, global_best, final_term)
+        self._notify_context_update(
+            self.TERMINATION_KEY,
+            {"reason": "completed"},
+        )
 
     def _resolve_strategy_and_model(
         self, strategy, strategy_params, model, model_name, model_params
@@ -253,252 +309,6 @@ class OptimizerContextProcessor(ContextProcessor):
             },
         )
         self._notify_context_update(self.HISTORY_KEY, [])
-
-    def _run_multi_start_optimization(
-        self,
-        starts,
-        strategy,
-        bounds,
-        termination,
-        model,
-        controller,
-        constraints,
-        strategy_params,
-        seed,
-        log_every,
-        decimals,
-        broadcast_start,
-        broadcast_step,
-        broadcast_end,
-    ):
-        """Run optimization from multiple starting points."""
-        runs, global_best = [], None
-        log_every = max(0, int(log_every or 0))
-        final_term = None
-
-        strategy_name = strategy.__class__.__name__
-        total_runs = len(starts)
-        for rid, start_x in enumerate(starts):
-            broadcast_start(
-                rid if total_runs > 1 else None, total_runs, {"strategy": strategy_name}
-            )
-            best, term = self._run_single_optimization(
-                start_x,
-                strategy,
-                bounds,
-                termination,
-                model,
-                controller,
-                constraints,
-                strategy_params,
-                seed,
-                log_every,
-                decimals,
-                rid if total_runs > 1 else None,
-                broadcast_step,
-            )
-            runs.append(best)
-            if global_best is None:
-                global_best = best
-            elif best and best["value"] < global_best["value"]:
-                global_best = best
-            final_term = term  # Keep the last termination info
-            broadcast_end(
-                term.get("reason"),
-                best["x"],
-                best["value"],
-                rid if total_runs > 1 else None,
-                {"strategy": strategy_name},
-            )
-
-        return runs, global_best, final_term
-
-    def _run_single_optimization(
-        self,
-        start_x,
-        strategy,
-        bounds,
-        termination,
-        model,
-        controller,
-        constraints,
-        strategy_params,
-        seed,
-        log_every,
-        decimals,
-        run_id,
-        broadcast_step,
-    ):
-        """Run optimization from a single starting point."""
-        if self.logger:
-            self.logger.debug(
-                f"[optimize] start strategy={strategy.__class__.__name__} "
-                f"bounds={bounds} x0={_fmt_vec(start_x, decimals)}"
-            )
-
-        # Try to pass progress_broadcaster to strategy if it supports it
-        init_kwargs = {
-            "x0": start_x,
-            "bounds": bounds,
-            "termination": termination,
-            "model": model,
-            "controller": controller,
-            "constraints": constraints,
-            "params": strategy_params,
-            "seed": seed,
-        }
-
-        # Check if strategy supports progress broadcasting
-        import inspect
-
-        if "progress_broadcaster" in inspect.signature(strategy.initialize).parameters:
-            init_kwargs["progress_broadcaster"] = broadcast_step
-
-        state = strategy.initialize(**init_kwargs)
-
-        best = self._optimization_loop(
-            strategy,
-            state,
-            model,
-            controller,
-            constraints,
-            log_every,
-            decimals,
-            run_id,
-            broadcast_step,
-        )
-
-        term = strategy.termination_summary(state)
-        if self.logger:
-            self.logger.debug(
-                f"[optimize] done reason={term.get('reason')} "
-                f"best_x={_fmt_vec(best['x'], decimals)} best_f={best['value']:.{decimals}g}"
-            )
-
-        return best, term
-
-    def _optimization_loop(
-        self,
-        strategy,
-        state,
-        model,
-        controller,
-        constraints,
-        log_every,
-        decimals,
-        run_id,
-        broadcast_step,
-    ):
-        """Main optimization iteration loop."""
-        neval = 0
-        best = None
-
-        while not strategy.should_stop(state):
-            x = strategy.ask(state)
-            value, feasible, viol = self._evaluate_candidate(
-                x, model, controller, constraints
-            )
-
-            step = self._create_step_record(
-                state, x, value, feasible, viol, neval, strategy
-            )
-            self._update_history(state, step)
-
-            if self.logger and log_every and (neval % log_every == 0):
-                self._log_iteration(step, decimals)
-
-            prev_best_val = best["value"] if best else float("inf")
-            state = strategy.tell(state, x, value, feasible, viol)
-            neval += 1
-            best = self._update_best_candidate(state, best, x, value, feasible)
-            is_best = best["value"] < prev_best_val
-            broadcast_step(
-                step["iter"],
-                x,
-                value,
-                feasible,
-                viol,
-                run_id,
-                is_best,
-                {"strategy": strategy.__class__.__name__},
-            )
-
-        return best or {
-            "x": state.get("x0", []),
-            "value": float("nan"),
-            "feasible": False,
-            "meta": {},
-        }
-
-    def _evaluate_candidate(self, x, model, controller, constraints):
-        """Evaluate a candidate solution."""
-        if controller:
-            feasible = controller.safe(x)
-            obs = controller.apply(x)
-            value = model.objective(x) if model else float(obs)
-        else:
-            feasible = True
-            value = model.objective(x) if model else float("nan")
-
-        viol = 0.0
-        if constraints:
-            for g in constraints.ineq:
-                viol = max(viol, 0.0, g(x))  # Fixed nested max call
-            for h in constraints.eq:
-                viol = max(viol, abs(h(x)))
-            feasible = feasible and (viol <= 1e-12)
-
-        return value, feasible, viol
-
-    def _create_step_record(self, state, x, value, feasible, viol, neval, strategy):
-        """Create a step record for the optimization history."""
-        return {
-            "iter": state.get("iter", 0),
-            "x": [float(v) for v in x],
-            "value": float(value),
-            "feasible": bool(feasible),
-            "violations": float(viol),
-            "step_info": {"neval": neval},
-            "rng": state.get("rng"),
-            "meu": {
-                "claim": {"value": float(value), "feasible": bool(feasible)},
-                "justification": {"rule": strategy.__class__.__name__},
-                "context": {"bounds": state.get("bounds")},
-                "trace": {"iter": state.get("iter", 0)},
-            },
-        }
-
-    def _update_history(self, state, step):
-        """Update optimization history in state and context."""
-        hist = state.setdefault("__history__", [])
-        hist.append(step)
-        self._notify_context_update(self.HISTORY_KEY, hist)
-
-    def _log_iteration(self, step, decimals):
-        """Log iteration details."""
-        self.logger.debug(
-            f"[optimize] iter={step['iter']} x={_fmt_vec(step['x'], decimals)} "
-            f"f={step['value']:.{decimals}g} feas={step['feasible']} "
-            f"viol={step['violations']:.{decimals}g}"
-        )
-
-    def _update_best_candidate(self, state, current_best, x, value, feasible):
-        """Update the best candidate found so far."""
-        cand = state.get("best", {"x": x, "value": value, "feasible": feasible})
-        if (current_best is None) or (cand["value"] < current_best["value"]):
-            return {
-                "x": list(cand["x"]),  # Fixed unsubscriptable issue
-                "value": float(cand["value"]),
-                "feasible": bool(cand["feasible"]),
-                "meta": {},
-            }
-        return current_best
-
-    def _finalize_optimization_context(self, runs, global_best, final_term):
-        """Finalize optimization context with results."""
-        self._notify_context_update("optimizer.runs", runs)
-        self._notify_context_update(self.BEST_KEY, global_best)
-        self._notify_context_update(self.TERMINATION_KEY, final_term)
 
     # required abstract methods
     def get_required_keys(self):

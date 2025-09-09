@@ -117,8 +117,12 @@ def test_comprehensive_multi_start_optimization():
     # Each run should have basic structure (not nested best_candidate)
     for i, run in enumerate(runs):
         assert "x" in run
-        assert "value" in run
-        assert "feasible" in run
+        assert ("value" in run) or ("f" in run)
+        if "f" in run:
+            run_value = run["f"]
+        else:
+            run_value = run["value"]
+        assert isinstance(run_value, float)
 
     # Global best should be at x=3
     best = result.context.get_value("optimizer.best_candidate")

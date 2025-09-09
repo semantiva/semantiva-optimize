@@ -12,145 +12,60 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Nelder-Mead optimization strategy using scipy.
-
-This module implements a gradient-free optimization strategy using the
-Nelder-Mead simplex algorithm for unconstrained optimization problems.
-"""
-
 from __future__ import annotations
+
+from typing import Callable, Optional, Sequence, Any, cast
+
+import scipy.optimize as opt
+
+from ._scipy_shim import ObjectiveRecorder
 
 
 class NelderMead:
-    """Nelder-Mead simplex optimization strategy."""
+    """Gradient-free Nelder-Mead optimization."""
 
-    def __init__(self):
-        """Initialize strategy with default parameters."""
-        self._model = None
-        self._term = None
-        self._progress_broadcaster = None
+    def __init__(self) -> None:
+        self._on_iter: Optional[Callable[[int, Sequence[float], float], None]] = None
 
-    def initialize(
+    def set_progress_broadcaster(
+        self, on_iter: Callable[[int, Sequence[float], float], None]
+    ) -> None:
+        self._on_iter = on_iter
+
+    def tell(
         self,
-        *,
-        x0,
-        bounds,  # pylint: disable=unused-argument
-        termination,
+        x0: Sequence[float],
         model,
-        controller,  # pylint: disable=unused-argument
-        constraints,  # pylint: disable=unused-argument
-        params,  # pylint: disable=unused-argument
-        seed=None,  # pylint: disable=unused-argument
-        progress_broadcaster=None,
+        bounds,  # unused
+        constraints,  # unused
+        termination,
+        **kwargs,
     ):
-        """
-        Initialize optimization state.
+        rec = ObjectiveRecorder(lambda z: model.objective(z))
 
-        Args:
-            x0: Initial point
-            bounds: Variable bounds (unused for Nelder-Mead)
-            termination: Termination criteria
-            model: Objective function model
-            controller: Controller interface (unused)
-            constraints: Optimization constraints (unused)
-            params: Strategy parameters (unused)
-            seed: Random seed (unused)
-            progress_broadcaster: Function to broadcast real-time progress
+        iter_idx = {"k": 0}
 
-        Returns:
-            Initial optimization state
-        """
-        self._model = model
-        self._term = termination
-        self._progress_broadcaster = progress_broadcaster
-        return {
-            "iter": 0,
-            "best": {"x": list(x0), "value": float("inf"), "feasible": True},
-        }
+        def _callback(xk):
+            f_val = rec.last_f if rec.last_x is xk else float(model.objective(xk))
+            if self._on_iter is not None:
+                self._on_iter(iter_idx["k"], xk, f_val)
+            iter_idx["k"] += 1
 
-    def ask(self, state):
-        """Request next candidate point."""
-        return state["best"]["x"]
+        options = {}
+        if termination and getattr(termination, "max_evals", None) is not None:
+            options["maxiter"] = termination.max_evals
+        if termination and getattr(termination, "ftol_abs", None) is not None:
+            options["fatol"] = termination.ftol_abs
+        if termination and getattr(termination, "xtol_abs", None) is not None:
+            options["xatol"] = termination.xtol_abs
 
-    def tell(self, state, x, value, feasible, viol):  # pylint: disable=unused-argument
-        """
-        Provide objective function feedback and run optimizer.
-
-        Args:
-            state: Current optimization state
-            x: Candidate point
-            value: Objective value (unused, scipy computes directly)
-            feasible: Feasibility flag (unused)
-            viol: Constraint violation (unused)
-
-        Returns:
-            Updated optimization state
-        """
-        import scipy.optimize as opt  # pylint: disable=import-outside-toplevel
-
-        # Store intermediate results for progress reporting
-        intermediate_results = []
-        global_best_f = state["best"]["value"]
-
-        def callback(xk):
-            """Callback to capture intermediate optimization steps."""
-            f_val = float(self._model.objective(xk))
-            result = {
-                "x": [float(v) for v in xk],
-                "f": f_val,
-                "iter": len(intermediate_results),
-            }
-            intermediate_results.append(result)
-
-            # Broadcast progress immediately if broadcaster is available
-            if self._progress_broadcaster:
-                nonlocal global_best_f
-                is_best = f_val < global_best_f
-                if is_best:
-                    global_best_f = f_val
-                self._progress_broadcaster(
-                    result["iter"],
-                    result["x"],
-                    result["f"],
-                    True,  # feasible
-                    0.0,  # viol
-                    0,  # run_id
-                    is_best,
-                    {"strategy": self.__class__.__name__, "source": "live"},
-                )
-            return False  # Don't terminate early
-
-        res = opt.minimize(
-            fun=lambda z: float(self._model.objective(z)),
-            x0=x,
+        # Use a casted reference to minimize to avoid mypy overload resolution errors
+        _opt_minimize = cast(Any, opt.minimize)
+        res = _opt_minimize(
+            fun=cast(Any, rec.fun),
+            x0=x0,
             method="Nelder-Mead",
-            callback=callback,
-            options={
-                "maxiter": self._term.max_evals,
-                "fatol": self._term.ftol_abs,
-                "xatol": self._term.xtol_abs,
-            },
+            callback=cast(Any, _callback),
+            options=options,
         )
-
-        # Store intermediate results in state for progress reporting
-        state["iter"] += 1
-        state["intermediate_results"] = intermediate_results
-        state["best"] = {
-            "x": [float(v) for v in res.x],
-            "value": float(res.fun),
-            "feasible": True,
-        }
-        return state
-
-    def should_stop(self, state):
-        """Check if optimization should terminate."""
-        return state["iter"] >= 1
-
-    def termination_summary(self, state):
-        """Provide termination summary."""
-        return {
-            "reason": "completed",
-            "metrics": {"iter": state["iter"]},
-            "budget": {"max_evals": self._term.max_evals},
-        }
+        return res

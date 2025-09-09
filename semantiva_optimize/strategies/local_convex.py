@@ -12,175 +12,78 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Local convex optimization strategy using scipy optimizers.
-
-This module implements a strategy that uses L-BFGS-B for bound-constrained
-problems and SLSQP for general constrained optimization.
-"""
-
 from __future__ import annotations
+
+from typing import Callable, Optional, Sequence, Any, cast
+
+import scipy.optimize as opt
+
+from ._scipy_shim import ObjectiveRecorder
 
 
 class LocalConvex:
-    """Local convex optimization using L-BFGS-B or SLSQP."""
+    """Local convex optimization using SciPy L-BFGS-B/SLSQP."""
 
-    def __init__(self):
-        """Initialize strategy with default parameters."""
-        self._model = None
-        self._bounds = None
-        self._constraints = None
-        self._term = None
-        self._params = None
-        self._progress_broadcaster = None
+    def __init__(self) -> None:
+        self._on_iter: Optional[Callable[[int, Sequence[float], float], None]] = None
 
-    def initialize(
+    def set_progress_broadcaster(
+        self, on_iter: Callable[[int, Sequence[float], float], None]
+    ) -> None:
+        """Optional hook the processor may call; no-op if unused."""
+        self._on_iter = on_iter
+
+    def tell(
         self,
-        *,
-        x0,
-        bounds,
-        termination,
+        x0: Sequence[float],
         model,
-        controller,  # pylint: disable=unused-argument
+        bounds: Optional[Sequence[tuple[float, float]]],
         constraints,
-        params,
-        seed=None,  # pylint: disable=unused-argument
-        progress_broadcaster=None,
+        termination,
+        **kwargs,
     ):
-        """
-        Initialize optimization state.
+        jac = getattr(model, "gradient", None)
+        if not callable(jac):
+            jac = None
+        rec = ObjectiveRecorder(lambda z: model.objective(z), jac)
 
-        Args:
-            x0: Initial point
-            bounds: Variable bounds
-            termination: Termination criteria
-            model: Objective function model
-            controller: Controller interface (unused)
-            constraints: Optimization constraints
-            params: Strategy parameters
-            seed: Random seed (unused)
-
-        Returns:
-            Initial optimization state
-        """
-        self._model = model
-        self._bounds = bounds
-        self._constraints = constraints
-        self._term = termination
-        self._params = params or {}
-        self._progress_broadcaster = progress_broadcaster
-        return {
-            "iter": 0,
-            "best": {"x": list(x0), "value": float("inf"), "feasible": True},
-        }
-
-    def ask(self, state):
-        """Request next candidate point."""
-        return state["best"]["x"]
-
-    def tell(self, state, x, value, feasible, viol):  # pylint: disable=unused-argument
-        """
-        Provide objective function feedback and run optimizer.
-
-        Args:
-            state: Current optimization state
-            x: Candidate point
-            value: Objective value (unused, scipy computes directly)
-            feasible: Feasibility flag (unused)
-            viol: Constraint violation (unused)
-
-        Returns:
-            Updated optimization state
-        """
-        state["iter"] += 1
-        try:
-            import scipy.optimize as opt  # pylint: disable=import-outside-toplevel
-        except Exception:  # pylint: disable=broad-exception-caught
-            return state
-
-        method, cons = self._setup_optimization_method()
-        jac = self._setup_jacobian(x)
-
-        # Store intermediate results for progress reporting
-        intermediate_results = []
-        global_best_f = state["best"]["value"]
-
-        def callback(xk):
-            """Callback to capture intermediate optimization steps."""
-            f_val = float(self._model.objective(xk))
-            result = {
-                "x": [float(v) for v in xk],
-                "f": f_val,
-                "iter": len(intermediate_results),
-            }
-            intermediate_results.append(result)
-
-            # Broadcast progress immediately if broadcaster is available
-            if self._progress_broadcaster:
-                nonlocal global_best_f
-                is_best = f_val < global_best_f
-                if is_best:
-                    global_best_f = f_val
-                self._progress_broadcaster(
-                    result["iter"],
-                    result["x"],
-                    result["f"],
-                    True,  # feasible
-                    0.0,  # viol
-                    0,  # run_id
-                    is_best,
-                    {"strategy": self.__class__.__name__, "source": "live"},
+        scipy_constraints = []
+        if constraints is not None:
+            for g in constraints.ineq or []:
+                scipy_constraints.append(
+                    {"type": "ineq", "fun": (lambda x, g=g: -float(g(x)))}
                 )
-            return False  # Don't terminate early
+            for h in constraints.eq or []:
+                scipy_constraints.append(
+                    {"type": "eq", "fun": (lambda x, h=h: float(h(x)))}
+                )
 
-        res = opt.minimize(
-            fun=lambda z: float(self._model.objective(z)),
-            x0=x,
-            jac=jac,
-            bounds=self._bounds,
-            constraints=cons,
+        iter_idx = {"k": 0}
+
+        def _callback(xk):
+            f_val = rec.last_f if rec.last_x is xk else float(model.objective(xk))
+            if self._on_iter is not None:
+                self._on_iter(iter_idx["k"], xk, f_val)
+            iter_idx["k"] += 1
+
+        options = {}
+        if termination and getattr(termination, "max_evals", None) is not None:
+            options["maxiter"] = termination.max_evals
+        if termination and getattr(termination, "ftol_abs", None) is not None:
+            options["ftol"] = termination.ftol_abs
+
+        method = "L-BFGS-B" if jac is not None else "SLSQP"
+
+        # Use a casted reference to minimize to avoid mypy overload resolution errors
+        _opt_minimize = cast(Any, opt.minimize)
+        res = _opt_minimize(
+            fun=cast(Any, rec.fun),
+            jac=cast(Any, rec.jac) if jac is not None else None,
+            x0=x0,
+            bounds=bounds,
+            constraints=scipy_constraints,
             method=method,
-            callback=callback,
-            options={"maxiter": self._term.max_evals, "ftol": self._term.ftol_abs},
+            callback=cast(Any, _callback),
+            options=options,
         )
-
-        # Store intermediate results in state for progress reporting
-        state["intermediate_results"] = intermediate_results
-        state["best"] = {
-            "x": [float(v) for v in res.x],
-            "value": float(res.fun),
-            "feasible": True,
-        }
-        return state
-
-    def _setup_optimization_method(self):
-        """Set up optimization method and constraints."""
-        method = "L-BFGS-B"
-        cons = ()
-        if self._constraints and (self._constraints.ineq or self._constraints.eq):
-            method = "SLSQP"
-            cons_list = []
-            for g in self._constraints.ineq:
-                cons_list.append({"type": "ineq", "fun": (lambda z, g=g: -g(z))})
-            for h in self._constraints.eq:
-                cons_list.append({"type": "eq", "fun": h})
-            cons = tuple(cons_list)
-        return method, cons
-
-    def _setup_jacobian(self, x):
-        """Set up jacobian function if available."""
-        if hasattr(self._model, "gradient") and self._model.gradient(x) is not None:
-            return self._model.gradient
-        return None
-
-    def should_stop(self, state):
-        """Check if optimization should terminate."""
-        return state["iter"] >= 1
-
-    def termination_summary(self, state):
-        """Provide termination summary."""
-        return {
-            "reason": "completed",
-            "metrics": {"iter": state["iter"]},
-            "budget": {"max_evals": self._term.max_evals},
-        }
+        return res

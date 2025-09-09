@@ -4,14 +4,12 @@ pipeline:
   nodes:
     - processor: OptimizerContextProcessor
       parameters:
-        # Use built-in example polynomial residual model instead of a missing
-        # 'objective' module. The processor supports `model_name` and
-        # `model_params` via `examples.models.make_model`.
+        # Use built-in example polynomial residual model with cubic polynomial
         model_name: "poly"
         model_params:
-          coeffs: [0.0, 0.0, 1.0, 0.0]
+          coeffs: [0.0, 0.0, 1.0, 0.0]  # cubic polynomial coefficients
         strategy: "local"
-        x0: [0.0, 0.0, 1.0, 0.0]
+        x0: [0.0, 0.0, 1.0, 0.0]  # length must equal degree+1
         termination: { max_evals: 120, ftol_abs: 1e-10 }
 
         progress:
@@ -19,13 +17,14 @@ pipeline:
             kwargs:
               x_data: [0,1,2,3,4,5]
               y_data: [0.1,1.2,4.1,8.9,15.7,24.9]
+              degree: 3  # explicit degree for plotting and validation
               mode: "file"
               out_dir: "./_progress"
-              file_prefix: "poly"
+              file_prefix: "poly_fit"
           - class: "semantiva_optimize.progress.cost.CostCurveObserver"
             kwargs:
               mode: "file"
               out_dir: "./_progress"
               file_prefix: "cost"
 
-        progress_update_every: 2
+        progress_update_every: 1

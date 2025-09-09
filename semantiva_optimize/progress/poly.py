@@ -1,3 +1,17 @@
+# Copyright 2025 Semantiva authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 from typing import Sequence, Optional
 
@@ -9,6 +23,7 @@ if "MPLBACKEND" not in os.environ:
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+from matplotlib.lines import Line2D
 
 from .base import ProgressObserver, StartEvent, StepEvent, EndEvent
 
@@ -45,6 +60,8 @@ class PolynomialPlotObserver(ProgressObserver):
         self.grid = np.linspace(x_min, x_max, 256)
         self.fig: Optional[Figure] = None
         self.ax: Optional[Axes] = None
+        self._current_line: Optional[Line2D] = None  # Will hold the dashed "current" line
+        self._best_line: Optional[Line2D] = None     # Will hold the solid "best" line
         # Fixed, simple palette
         self._data_color = "black"
         self._fit_color = "#1f77b4"  # blue
@@ -56,8 +73,15 @@ class PolynomialPlotObserver(ProgressObserver):
 
     def on_start(self, e: StartEvent) -> None:  # pragma: no cover - simple
         self.fig, self.ax = plt.subplots(figsize=(6, 4))
-        self.ax.scatter(self.x, self.y, s=12, label="data", color=self._data_color)
-        self.ax.set_title("Polynomial fit — current best")
+        self.ax.scatter(self.x, self.y, s=12, label="measurements", color=self._data_color)
+        
+        # Initialize both current (dashed) and best (solid) lines
+        (self._current_line,) = self.ax.plot([], [], linestyle="--", linewidth=1.2, 
+                                           label="current", color=self._fit_color)
+        (self._best_line,) = self.ax.plot([], [], linewidth=2.0, 
+                                        label="best", color="darkblue")
+        
+        self.ax.set_title("Polynomial fit — iter=0")
         self.ax.set_xlabel("x")
         self.ax.set_ylabel("y")
         self.ax.legend(loc="best")
@@ -65,67 +89,45 @@ class PolynomialPlotObserver(ProgressObserver):
             plt.ion()  # Turn on interactive mode
             self.fig.show()
 
-    def _annotate_now_testing(self, e: StepEvent):  # pragma: no cover - simple
-        if self.ax is None:
-            return
-        txt = f"iter={e.iter}  f={e.f:.4g}"
-        if e.run_id is not None:
-            txt += f"  run={e.run_id}"
-        if len(e.x) <= 4:
-            txt += "  θ=[" + ", ".join(f"{v:.3g}" for v in e.x) + "]"
-        for a in list(self.ax.texts):
-            if getattr(a, "_tag", None) == "now":
-                a.remove()
-        ann = self.ax.text(
-            0.02, 0.98, txt, transform=self.ax.transAxes, va="top", ha="left"
-        )
-        ann._tag = "now"  # type: ignore[attr-defined]
+    def _update_line(self, line, theta):
+        """Update a line with polynomial evaluated over grid."""
+        y_hat = [self._poly(theta, gx) for gx in self.grid]
+        line.set_data(self.grid, y_hat)
 
     def on_step(self, e: StepEvent) -> None:  # pragma: no cover - tested indirectly
-        if not e.is_best:
-            return
-        y_hat = [self._poly(e.x, gx) for gx in self.grid]
-        if self.ax:
-            # Remove previous "current" lines
-            # Iterate a copy of lines to avoid modifying the list while iterating
-            for existing_line in list(self.ax.lines):
-                if existing_line.get_label() == "current":
-                    existing_line.remove()
+        # Always show the candidate being tested now (dashed)
+        if self._current_line is not None:
+            self._update_line(self._current_line, e.x)
+        
+        # Update title with current iteration info
+        if self.ax is not None:
+            self.ax.set_title(f"iter={e.iter}  f={e.f:.3g}  θ={[round(v, 2) for v in e.x]}")
+        
+        if self.mode == "window":
+            if self.fig is not None:
+                self.fig.canvas.draw()
+                self.fig.canvas.flush_events()
+                # Keep window open and visible
+                if (
+                    hasattr(self.fig.canvas, "manager")
+                    and self.fig.canvas.manager is not None
+                    and hasattr(self.fig.canvas.manager, "window")
+                ):
+                    self.fig.canvas.manager.window.wm_deiconify()
+                    self.fig.canvas.manager.window.lift()
+        else:
+            # Save current step as PNG
+            if self.fig is not None:
+                self.fig.tight_layout()
+                self.fig.savefig(
+                    os.path.join(self.out_dir, f"{self.file_prefix}_iter{e.iter}.png"),
+                    dpi=self.dpi,
+                )
 
-            # Plot current best with fixed color to avoid color cycling
-            self.ax.plot(
-                self.grid,
-                y_hat,
-                label="current",
-                color=self._fit_color,
-                linewidth=2,
-            )
-            self._annotate_now_testing(e)
-            if self.mode == "file":
-                if self.fig is not None:
-                    self.fig.tight_layout()
-                    self.fig.savefig(
-                        os.path.join(
-                            self.out_dir, f"{self.file_prefix}_best_iter{e.iter}.png"
-                        ),
-                        dpi=self.dpi,
-                    )
-            else:  # pragma: no cover - requires GUI backend
-                if self.fig is not None:
-                    self.fig.tight_layout()
-                    self.fig.canvas.draw()
-                    self.fig.canvas.flush_events()
-                    # Keep window open and visible
-                    if (
-                        hasattr(self.fig.canvas, "manager")
-                        and self.fig.canvas.manager is not None
-                        and hasattr(self.fig.canvas.manager, "window")
-                    ):
-                        self.fig.canvas.manager.window.wm_deiconify()
-                        self.fig.canvas.manager.window.lift()
-
-    def on_best(self, e: StepEvent) -> None:  # pragma: no cover - noop
-        pass
+    def on_best(self, e: StepEvent) -> None:  # pragma: no cover - updates best line
+        # Update best-so-far (solid) when we have a new best
+        if self._best_line is not None:
+            self._update_line(self._best_line, e.x)
 
     def on_end(self, e: EndEvent) -> None:  # pragma: no cover - simple
         if self.fig is not None:

@@ -24,6 +24,7 @@ progress_throttle_s: 0.05
 * **CostCurveObserver**: best-so-far objective value vs iteration; works for single and multi-start.
 * Observers are **read-only** (they never affect the optimization).
 * Headless by default (`Agg` backend); for live windows set a GUI backend (e.g., `TkAgg`).
+* The same payload sent to observers is appended to `optimizer.history` during the run, keeping history and observers in lockstep. Inequality constraints follow the convention `g(x) ≤ 0`.
 
 See also:
 
