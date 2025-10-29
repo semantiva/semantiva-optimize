@@ -46,7 +46,7 @@ def test_logs_emitted_with_log_every_1():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Create logger to capture output
     logger = _StubLogger()

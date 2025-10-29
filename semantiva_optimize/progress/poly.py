@@ -60,8 +60,10 @@ class PolynomialPlotObserver(ProgressObserver):
         self.grid = np.linspace(x_min, x_max, 256)
         self.fig: Optional[Figure] = None
         self.ax: Optional[Axes] = None
-        self._current_line: Optional[Line2D] = None  # Will hold the dashed "current" line
-        self._best_line: Optional[Line2D] = None     # Will hold the solid "best" line
+        self._current_line: Optional[Line2D] = (
+            None  # Will hold the dashed "current" line
+        )
+        self._best_line: Optional[Line2D] = None  # Will hold the solid "best" line
         # Fixed, simple palette
         self._data_color = "black"
         self._fit_color = "#1f77b4"  # blue
@@ -73,14 +75,23 @@ class PolynomialPlotObserver(ProgressObserver):
 
     def on_start(self, e: StartEvent) -> None:  # pragma: no cover - simple
         self.fig, self.ax = plt.subplots(figsize=(6, 4))
-        self.ax.scatter(self.x, self.y, s=12, label="measurements", color=self._data_color)
-        
+        self.ax.scatter(
+            self.x, self.y, s=12, label="measurements", color=self._data_color
+        )
+
         # Initialize both current (dashed) and best (solid) lines
-        (self._current_line,) = self.ax.plot([], [], linestyle="--", linewidth=1.2, 
-                                           label="current", color=self._fit_color)
-        (self._best_line,) = self.ax.plot([], [], linewidth=2.0, 
-                                        label="best", color="darkblue")
-        
+        (self._current_line,) = self.ax.plot(
+            [],
+            [],
+            linestyle="--",
+            linewidth=1.2,
+            label="current",
+            color=self._fit_color,
+        )
+        (self._best_line,) = self.ax.plot(
+            [], [], linewidth=2.0, label="best", color="darkblue"
+        )
+
         self.ax.set_title("Polynomial fit — iter=0")
         self.ax.set_xlabel("x")
         self.ax.set_ylabel("y")
@@ -98,11 +109,13 @@ class PolynomialPlotObserver(ProgressObserver):
         # Always show the candidate being tested now (dashed)
         if self._current_line is not None:
             self._update_line(self._current_line, e.x)
-        
+
         # Update title with current iteration info
         if self.ax is not None:
-            self.ax.set_title(f"iter={e.iter}  f={e.f:.3g}  θ={[round(v, 2) for v in e.x]}")
-        
+            self.ax.set_title(
+                f"iter={e.iter}  f={e.f:.3g}  θ={[round(v, 2) for v in e.x]}"
+            )
+
         if self.mode == "window":
             if self.fig is not None:
                 self.fig.canvas.draw()

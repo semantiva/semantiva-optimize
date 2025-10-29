@@ -21,8 +21,11 @@ epistemic transparency by design.
 """
 
 
-from semantiva.registry import SemantivaExtension
-from semantiva.registry.class_registry import ClassRegistry
+from semantiva.registry import (
+    SemantivaExtension,
+    ProcessorRegistry,
+    ParameterResolverRegistry,
+)
 
 # Import main components for convenient access
 from . import strategies
@@ -33,27 +36,29 @@ class SemantivaOptimize(SemantivaExtension):
     """Extension class for registering Semantiva Optimize modules."""
 
     def register(self) -> None:
-        """Register all optimization-related modules with the Semantiva class registry."""
-        ClassRegistry.register_modules(
+        """Register all optimization-related modules with the Semantiva processor registry."""
+        ProcessorRegistry.register_modules(
             [
-                "semantiva_optimize.processors",
-                "semantiva_optimize.strategies",
-                "semantiva_optimize.adapters",
+                "semantiva_optimize.processors.optimizer_processor",
+                "semantiva_optimize.strategies.local_convex",
+                "semantiva_optimize.strategies.nelder_mead",
+                "semantiva_optimize.adapters.controller_adapter",
+                "semantiva_optimize.adapters.model_adapter",
                 "semantiva_optimize.termination",
                 "semantiva_optimize.constraints",
                 "semantiva_optimize.descriptors",
                 "semantiva_optimize.factory",
                 "semantiva_optimize.examples.models",
-                "semantiva_optimize.progress",
+                "semantiva_optimize.progress.base",
+                "semantiva_optimize.progress.cost",
+                "semantiva_optimize.progress.poly",
             ]
         )
 
-        # Register config processor and parameter resolver
-        from .config_preprocessor import optimize_config_preprocessor
+        # Register parameter resolver
         from .param_resolvers import optimize_param_resolver
 
-        ClassRegistry.register_config_processor(optimize_config_preprocessor)
-        ClassRegistry.register_param_resolver(optimize_param_resolver)
+        ParameterResolverRegistry.register_resolver(optimize_param_resolver)
 
 
 __all__ = [

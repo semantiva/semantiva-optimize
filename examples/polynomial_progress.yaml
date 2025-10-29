@@ -1,4 +1,4 @@
-extensions: ["semantiva_optimize"]
+extensions: ["semantiva-optimize"]
 
 pipeline:
   nodes:

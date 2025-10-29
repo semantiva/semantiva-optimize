@@ -39,7 +39,7 @@ def test_safe_guard():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Create pipeline node configuration with controller
     # Note: Controllers need to be Python objects, not YAML-serializable

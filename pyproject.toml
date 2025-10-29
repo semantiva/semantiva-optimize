@@ -5,10 +5,10 @@ description = "Optimization extension for Semantiva: Local Convex strategy and g
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10.12"
-dependencies = ["numpy>=2.2.1", "scipy", "semantiva>=0.5.0rc2", "matplotlib>=3.10.6"]
+dependencies = ["numpy>=2.2.1", "scipy", "semantiva>=0.5.0rc9", "matplotlib>=3.10.6"]
 
 [project.entry-points."semantiva.extensions"]
-optimize = "semantiva_optimize"
+semantiva-optimize = "semantiva_optimize:SemantivaOptimize"
 
 [tool.setuptools]
 packages = ["semantiva_optimize"]

@@ -28,7 +28,7 @@ def test_local_convex_finds_root_sqrt2():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Create pipeline node configuration
     nodes = [

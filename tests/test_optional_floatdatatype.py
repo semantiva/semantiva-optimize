@@ -32,7 +32,7 @@ def test_compat_floatdatatype_if_available():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Extract float value from FloatDataType
     x0_value = FloatDataType(0.0).data

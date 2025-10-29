@@ -28,7 +28,7 @@ def test_yaml_progress_smoke(tmp_path):
         pytest.skip("dependencies missing")
 
     yaml_config = f"""
-extensions: ["semantiva_optimize"]
+extensions: ["semantiva-optimize"]
 
 pipeline:
   nodes:

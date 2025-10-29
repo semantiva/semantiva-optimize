@@ -15,7 +15,7 @@
 """
 Comprehensive tests demonstrating improved pipeline-based testing patterns.
 
-These tests serve as examples of best practices for testing semantiva-optimize
+These tests serve as examples of best practices for testing semantiva_optimize
 components using realistic pipeline execution rather than internal APIs.
 """
 
@@ -37,7 +37,7 @@ def test_yaml_based_optimization_complete():
 
     # Complete YAML configuration as users would write it
     yaml_config = """
-    extensions: ["semantiva_optimize"]
+    extensions: ["semantiva-optimize"]
     
     pipeline:
       nodes:
@@ -87,7 +87,7 @@ def test_comprehensive_multi_start_optimization():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Multi-start configuration
     nodes = [
@@ -138,7 +138,7 @@ def test_nelder_mead_gradient_free_comprehensive():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Gradient-free optimization configuration
     nodes = [
@@ -194,7 +194,7 @@ def test_parametrized_model_optimization(model_type, model_params, expected_min)
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Parametrized configuration
     nodes = [
@@ -229,7 +229,7 @@ def test_termination_criteria_validation():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Test with max_evals termination
     nodes = [

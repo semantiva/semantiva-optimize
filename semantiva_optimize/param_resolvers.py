@@ -58,11 +58,15 @@ def _parse_kv_list(s: str) -> dict[str, Any]:
 
 
 def optimize_param_resolver(value: Any) -> Any:
-    """Resolve ``opt.*`` strings into class descriptors."""
+    """Resolve ``opt.*`` strings into class descriptors.
+
+    Returns None if the value is not handled by this resolver,
+    otherwise returns the resolved value.
+    """
     if not isinstance(value, str):
-        return value
+        return None
     if not value.startswith("opt."):
-        return value
+        return None
 
     body = value[4:]
     if body.startswith("strategy:"):
@@ -100,4 +104,4 @@ def optimize_param_resolver(value: Any) -> Any:
         class_path = _PROGRESS_ALIASES.get(alias, alias)
         return [{"class": class_path, "kwargs": kwargs}]
 
-    return value
+    return None

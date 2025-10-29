@@ -28,7 +28,7 @@ def test_multi_start_fan_in():
         pytest.skip("SciPy not installed")
 
     # Load extension
-    load_extensions(["semantiva_optimize"])
+    load_extensions(["semantiva-optimize"])
 
     # Create pipeline node configuration
     nodes = [
